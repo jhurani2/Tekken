@@ -1,0 +1,500 @@
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Company: 
+// Engineer: 
+// 
+// Create Date: 04/30/2026 07:51:26 PM
+// Design Name: 
+// Module Name: game_logic
+// Project Name: 
+// Target Devices: 
+// Tool Versions: 
+// Description: 
+// 
+// Dependencies: 
+// 
+// Revision:
+// Revision 0.01 - File Created
+// Additional Comments:
+// 
+//////////////////////////////////////////////////////////////////////////////////
+
+
+module game_logic(
+    input logic reset,
+    input logic clk,
+    input logic [7:0] keycode0, keycode1,
+    input logic [5:0] round_timer,
+    input logic [5:0] countdown_timer,
+    input logic timer_start,
+    output logic [9:0] char1_x,char1_y, char2_x,char2_y,
+    output logic [2:0] frame0, frame1,
+    output logic [6:0] p1_health, p2_health,
+    output logic is_ko, is_round_over
+    );
+    
+
+    typedef enum logic [2:0] {
+        IDLE,
+        PUNCH,
+        KICK,
+        BLOCK,
+        HURT
+    } state_type;
+    
+    state_type cur_state0, next_state0, cur_state1, next_state1;
+    logic [4:0] act_timer0, act_timer1;
+    logic [5:0] block_timer0, block_timer1;
+    logic [7:0] prev_keycode0, prev_keycode1;
+    logic jumping1, jumping2;
+    logic signed [10:0] char1_vel, char2_vel;
+    logic [2:0] curstate_p1, curstate_p2;
+    logic hit_p1, hit_p2;
+    logic [5:0] count, out;
+    
+    parameter [9:0] Ball_X_Min=0;       // Leftmost point on the X axis
+    parameter [9:0] Ball_X_Max=639;     // Rightmost point on the X axis
+    parameter [9:0] Ball_Y_Min=0;       // Topmost point on the Y axis
+    parameter [9:0] Ball_Y_Max=479;     // Bottommost point on the Y axis
+    parameter [9:0] Char_X_Step= 30;      // Step size on the X axis
+    parameter [9:0] Char_Y_Step= 70;      // Step size on the Y axis
+    parameter [9:0] Char_W = 64;
+    parameter [9:0] Char_H = 128;
+    
+    
+    localparam CHAR1X = 10'd70;
+    localparam CHAR1Y = 10'd280;
+    localparam CHAR2X = 10'd340;
+    localparam CHAR2Y = 10'd280;
+    
+    localparam GROUND = 10'd280;
+    localparam signed [10:0] GRAV = 11'sd5;
+    localparam signed [10:0] JUMP_IMP = -11'sd120;
+      
+assign curstate_p1 = cur_state0;
+assign curstate_p2 = cur_state1;
+
+always_ff @ (posedge clk)
+    begin
+        if ( reset  || keycode0 == 8'h15 || keycode1 == 8'h15) 
+           begin
+                count <= 6'd15;
+                out <= 6'd16;
+           end
+        else
+            begin
+                if (count == 0)
+                    begin
+                    out <= out-1;
+                    count <= 6'd15;
+                    end
+                else
+                begin     
+                      count <= count-1;
+                end
+        end
+    end
+
+
+always_ff @(posedge clk)
+    begin
+    if( keycode0 == 8'h15 || keycode1 == 8'h15 || reset)
+    begin
+        cur_state0 <= IDLE;
+        act_timer0 <= 5'b0;
+//        char1_y <= CHAR1Y;
+//		char1_x <= CHAR1X;
+    end
+    else
+    begin
+        cur_state0 <= next_state0;
+        //cite timer stuff
+        if (next_state0 != cur_state0) 
+        begin
+            if (next_state0 == PUNCH || next_state0 == KICK || next_state0 == BLOCK || next_state0 == HURT)
+                    begin
+                    act_timer0 <= 5'd22;
+                    block_timer0 <= 6'd33;
+                    end
+         end
+         else if (cur_state0 == PUNCH || cur_state0 == KICK || cur_state0 == BLOCK || next_state0 == HURT) 
+         begin
+            if (act_timer0 > 0)
+                act_timer0 <= act_timer0 - 1;
+            if(block_timer0 > 0)
+                block_timer0 <= block_timer0 - 1;
+          end
+     end    
+ end
+ always_comb
+ begin
+    next_state0 = cur_state0;
+    unique case (cur_state0)
+// use <enum_name> = <enum_value> to assign the next state, or
+// use <enum_name>.next to go to the immediate next state
+        IDLE : 
+        begin
+           if(hit_p1 && !jumping1)
+                next_state0 = HURT;
+           else if (keycode0 == 8'h14 && (prev_keycode0 != 8'h14) && timer_start) // conditional state transition
+            next_state0 = PUNCH;
+            else if (keycode0 == 8'h8 && (prev_keycode0 != 8'h8)&& timer_start)
+                next_state0 = KICK;
+            else if (keycode0 == 8'h16 && (prev_keycode0 != 8'h16) && timer_start)
+                next_state0 = BLOCK;
+        end
+        PUNCH : 
+            if(hit_p1)
+                next_state0 = HURT;
+            else if (act_timer0 == 5'b0)
+            next_state0 = IDLE; // deterministic state transition
+        KICK :
+            if(hit_p1)
+                next_state0 = HURT;
+            else if (act_timer0 == 5'b0)
+            next_state0 = IDLE;
+        BLOCK : 
+            if (block_timer0 == 6'd0)
+                next_state0 = IDLE;
+        HURT : 
+            if (act_timer0 == 5'b0)
+                next_state0 = IDLE;
+        endcase
+ end
+ 
+always_comb
+begin
+    case (cur_state0)
+       IDLE:
+       begin
+            frame0 = 3'b0;
+        end
+        PUNCH:
+            begin
+            frame0 = 3'd1;
+            end
+        KICK:
+            begin
+            frame0 = 3'd2;
+            end
+        BLOCK:
+            begin
+            frame0 = 3'd3;
+            end
+        HURT:
+            begin
+            frame0 = 3'd4;
+            end
+       default:
+        begin
+           frame0 = 3'b0;
+         end
+      endcase
+end
+
+// char2 fsm
+always_ff @(posedge clk)
+    begin
+    if(keycode0 == 8'h15 || keycode1 == 8'h15 || reset)
+    begin
+        cur_state1 <= IDLE;
+        act_timer1 <= 5'b0;
+//		char2_y <= CHAR2Y;
+//		char2_x <= CHAR2X;
+			
+    end
+    else
+    begin
+        cur_state1 <= next_state1;
+        //cite timer stuff
+        if (next_state1 != cur_state1) 
+        begin
+            if (next_state1 == PUNCH || next_state1 == KICK || next_state1 == BLOCK || next_state1 == HURT)
+                  begin
+                    act_timer1 <= 5'd22;
+                    block_timer1 <= 6'd33;
+                  end
+         end
+         else if (cur_state1 == PUNCH || cur_state1 == KICK || cur_state1 == BLOCK || next_state1 == HURT) 
+         begin
+            if (act_timer1 > 0)
+                act_timer1 <= act_timer1 - 1;
+            if(block_timer1 > 0)
+                block_timer1 <= block_timer1 - 1;
+          end
+     end    
+ end
+ always_comb
+ begin
+    next_state1 = cur_state1;
+    unique case (cur_state1)
+// use <enum_name> = <enum_value> to assign the next state, or
+// use <enum_name>.next to go to the immediate next state
+        IDLE : 
+        begin
+            if(hit_p2 && !jumping2)
+                next_state1 = HURT;
+           else if (keycode1 == 8'd89 && (prev_keycode1 != 8'd89) && timer_start) // conditional state transition
+                next_state1 = PUNCH;
+            else if (keycode1 == 8'd90 && (prev_keycode1 != 8'd90) && timer_start)
+                next_state1 = KICK;
+            else if (keycode1 == 8'h51 && (prev_keycode1 != 8'h51)&& timer_start)
+                next_state1 = BLOCK;
+        end
+        PUNCH : 
+            if(hit_p2)
+                next_state1 = HURT;
+            else if (act_timer1 == 5'b0)
+                next_state1 = IDLE; // deterministic state transition
+        KICK :
+            if(hit_p2)
+                next_state1 = HURT;
+            else if (act_timer1 == 5'b0)
+                next_state1 = IDLE;
+        BLOCK : 
+            if (block_timer1 == 6'd0)
+                next_state1 = IDLE;
+        HURT:
+             if (act_timer1 == 5'b0)
+                next_state1 = IDLE;
+        
+        endcase
+ end
+ 
+always_comb
+begin
+    case (cur_state1)
+       IDLE:
+       begin
+            frame1 = 3'b0;
+        end
+        PUNCH:
+            begin
+            frame1 = 3'd1;
+            end
+        KICK:
+            begin
+            frame1 = 3'd2;
+            end
+        BLOCK:
+            begin
+            frame1 = 3'd3;
+            end
+        HURT:
+            begin
+            frame1 = 3'd4;
+            end
+       default:
+        begin
+           frame1 = 3'b0;
+         end
+      endcase
+end
+ // keycode logic 
+ always_ff @(posedge clk) //make sure the frame clock is instantiated correctly
+    begin: Move_Char
+        if (keycode0 == 8'h15 || keycode1 == 8'h15 || reset)
+        begin 
+            begin
+			     char1_y <= CHAR1Y;
+			     char1_x <= CHAR1X;
+			     char2_y <= CHAR2Y;
+			     char2_x <= CHAR2X;
+			end
+			
+			prev_keycode0 <= 8'h0;
+			prev_keycode1 <= 8'h0;
+			
+			jumping1 <= 1'b0;
+			jumping2 <= 1'b0;
+			char1_vel <= 11'd0;
+			char2_vel <= 11'd0;
+			
+        end
+        else if (out%2 == 0 && !timer_start)
+                begin
+                char1_y <= CHAR1Y - 10'd10;
+			    char1_x <= CHAR1X;
+			    char2_y <= CHAR2Y;
+			    char2_x <= CHAR2X + 10'd10;
+			    end
+		else if (out%2 != 0  && !timer_start)
+                begin
+                char1_y <= CHAR1Y + 10'd10;
+			    char1_x <= CHAR1X;
+			    char2_y <= CHAR2Y;
+			    char2_x <= CHAR2X - 10'd10;
+			    end
+        else 
+        begin 
+            prev_keycode0 <= keycode0;
+            prev_keycode1 <= keycode1;
+            //keep location the same as default
+            char1_y <=  char1_y;
+			char1_x <= char1_x;
+			char2_y <= char2_y;
+			char2_x <= char2_x;
+			
+			if(jumping1)
+			begin
+			     char1_vel <= char1_vel + GRAV;
+			     if(char1_y + char1_vel >= GROUND)
+			     begin
+			         char1_y <= GROUND;
+			         jumping1 <= 1'b0;
+			         char1_vel <= 11'd0; 
+			     end 
+			     else 
+			     begin
+			         char1_y <= GROUND + char1_vel[9:0];
+			     end
+			end
+			if(jumping2)
+			begin
+			     char2_vel <= char2_vel + GRAV;
+			     if(char2_y + char2_vel >= GROUND)
+			     begin
+			         char2_y <= GROUND;
+			         jumping2 <= 1'b0;
+			         char2_vel <= 11'd0; 
+			     end 
+			     else 
+			     begin
+			         char2_y <= GROUND + char2_vel[9:0];
+			     end
+			end
+	   end
+         if(keycode0 != prev_keycode0 && timer_start)
+         begin 
+         case(keycode0)  
+         8'h1A://w
+            begin
+                if(!jumping1 )
+                begin
+                    jumping1 <= 1'b1;
+                    char1_vel <= JUMP_IMP;
+                end
+//            if (char1_y >= Ball_Y_Min + Char_Y_Step)
+//                char1_y <= char1_y - Char_Y_Step;
+                
+            end
+        8'h04: //a - left
+            begin
+            if ((char1_x >= Ball_X_Min + Char_X_Step))
+                char1_x <= char1_x - Char_X_Step;
+            end
+//        if (keycode0 == 8'h16)//s down
+//            begin
+//            Char1_Y_Motion_next = 10'd1;
+//            Char1_X_Motion_next = 10'd0;
+//            end
+         8'h07://d - right
+            begin 
+             if((char1_x + Char_X_Step + (3*Char_W) <= Ball_X_Max) && (char1_x + Char_X_Step + Char_W <= char2_x + 15))
+                char1_x <= char1_x + Char_X_Step;
+            end
+         
+          default: ;
+        endcase
+        end
+        if(keycode1 != prev_keycode1 && timer_start)
+        begin
+        case(keycode1)
+        8'h52://up arrow
+            begin
+            if(!jumping2)
+                begin
+                    jumping2 <= 1'b1;
+                    char2_vel <= JUMP_IMP;
+                end
+//              if (char2_y >= Ball_Y_Min + Char_Y_Step)
+//                char2_y <= char2_y - Char_Y_Step;
+            end
+         8'h50://left arrow
+            begin
+             if ((char2_x >= Ball_X_Min + Char_X_Step) && (char2_x >= char1_x + Char_X_Step + Char_W))
+                char2_x <= char2_x - Char_X_Step;
+            end
+         8'h4F: //right arrow
+            begin
+             if((char2_x + Char_X_Step + (3*Char_W) <= Ball_X_Max))
+                char2_x <= char2_x + Char_X_Step;
+            end
+		default: ;
+		endcase
+		end
+    
+    end
+
+always_ff @(posedge clk)
+begin
+    if(reset || keycode0 == 8'h15 || keycode1 == 8'h15)
+    begin
+    p1_health <= 7'd100;
+    p2_health <= 7'd100;
+    is_ko <= 1'b0;
+    end
+    else begin
+        if(next_state0 == HURT && cur_state0 != next_state0)
+        begin
+            if(p1_health != 7'd0)
+            begin
+                p1_health <= p1_health - 7'd10;
+            end
+            else
+            begin
+                p1_health <= 7'd0; 
+            end  
+        end
+        else
+        begin
+            p1_health <= p1_health;
+        end 
+        
+        if(next_state1 == HURT && cur_state1 != next_state1)
+        begin
+            if(p2_health != 7'd0)
+            begin
+                p2_health <= p2_health - 7'd10;
+            
+            end
+            else
+            begin
+                p2_health <= 7'd0;  
+          
+            end
+        end
+        else
+            p2_health <= p2_health;    
+    
+    //CITE THIS IF STATEMENT
+    if (p1_health == 7'b0 || p2_health == 7'b0)
+    begin
+       is_ko <= 1'b1;
+    end 
+    else
+        is_ko <= 1'b0;
+   end
+end
+
+always_comb
+begin
+    if (round_timer == 6'b0)
+        is_round_over = 1'b1;
+    else
+        is_round_over = 1'b0;
+end
+
+collision Collision (
+    .char1_x(char1_x),
+    .char1_y(char1_y),
+    .char2_x(char2_x),
+    .char2_y(char2_y),
+    .char1_state(curstate_p1),
+    .char2_state(curstate_p2),
+    .frame_clk(clk),
+    .is_p1_hit(hit_p1),
+    .is_p2_hit(hit_p2)
+);
+
+endmodule
