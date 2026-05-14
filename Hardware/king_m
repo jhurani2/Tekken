@@ -1,0 +1,139 @@
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Company: 
+// Engineer: 
+// 
+// Create Date: 04/22/2026 05:22:58 PM
+// Design Name: 
+// Module Name: jack_m
+// Project Name: 
+// Target Devices: 
+// Tool Versions: 
+// Description: 
+// 
+// Dependencies: 
+// 
+// Revision:
+// Revision 0.01 - File Created
+// Additional Comments:
+// 
+//////////////////////////////////////////////////////////////////////////////////
+
+
+module king_m (
+	input logic [9:0] DrawX, DrawY,
+	input logic [9:0] char1_y, char1_x, char2_x, char2_y,
+	input logic [2:0] frame1, frame2,
+	input logic blank,
+	input logic pix_clk,
+	input logic char1d, char2d,
+	output logic [3:0] red, green, blue,
+	output logic bounds
+);
+
+//logic [12:0] rom_address;
+logic [3:0] rom_q;
+logic [9:0] drawx,drawy;
+logic [2:0] frame;
+logic [3:0] palette_red, palette_green, palette_blue;
+logic king_bounds;
+logic [13:0] addr;
+logic negedge_pix_clk;
+logic signed [10:0] king_lx, king_ly;
+logic [9:0] KingX, KingY;
+
+// localparam JACKX = 10'd340;
+// localparam JACKY = 10'd280;
+    
+   localparam SPRITE_W  = 64;
+    localparam SPRITE_H  = 48;
+    localparam SCALE     = 4;
+    localparam FRAME_PIX = SPRITE_W * SPRITE_H; 
+    localparam BG_W      = 256;
+    localparam BG_H      = 128;
+    localparam FRAME_W   = 640;
+    localparam FRAME_H   = 480;
+//    localparam PAUL_FRAME = 3'h0;
+//    localparam JACK_FRAME = 3'h0;
+    localparam SHEET_W = 320;
+// read from ROM on negedge, set pixel on posedge
+assign negedge_pix_clk = ~pix_clk;
+
+always_comb
+begin
+    KingX = 10'b0;
+    KingY = 10'b0;
+    if (char1d)
+    begin
+        KingX = char1_x;
+        KingY = char1_y;
+        frame = frame1;
+        
+    end
+    else if (char2d)
+    begin
+        KingX = char2_x;
+        KingY = char2_y;
+        frame = frame2;
+    end
+  
+end
+
+assign king_lx = {1'b0, DrawX} - {1'b0, KingX};
+assign king_ly = {1'b0, DrawY} - {1'b0, KingY};
+always_comb
+begin
+    if(char1d)
+        king_bounds = (~king_lx[10]) && (~king_ly[10]) && (king_lx < SPRITE_W * SCALE) && (king_ly < SPRITE_H * SCALE);
+    else if(char2d)
+        king_bounds = (~king_lx[10]) && (~king_ly[10]) && (king_lx < SPRITE_W * SCALE) && (king_ly < SPRITE_H * SCALE);
+    else
+        king_bounds = 1'b0;
+end
+//assign king_bounds = (~king_lx[10]) && (~king_ly[10]) && (king_lx < SPRITE_W * SCALE) && (king_ly < SPRITE_H * SCALE);
+assign bounds = king_bounds;
+always_comb
+begin
+    addr = 14'b0; 
+    if (king_bounds)
+    begin
+        if (char1d)
+            addr = (frame * SPRITE_W) + ((king_ly >> 2) * SHEET_W) + ((king_lx >> 2)% SPRITE_W);
+        else if (char2d)
+             addr = (frame * SPRITE_W) + ((king_ly >> 2) * SHEET_W) + (SPRITE_W - 1 - ((king_lx >> 2)% SPRITE_W));
+     end  
+end
+
+
+// cite idea from claude 
+always_comb
+begin
+    if (blank)
+        begin
+        red = palette_red;
+        green = palette_green;
+        blue = palette_blue;
+        end
+    else
+        begin
+        red = 4'h0;
+        green = 4'h0;
+        blue = 4'h0;
+        end
+end
+
+king_rom King_rom (
+	.clock   (negedge_pix_clk),
+	.mem_clk (pix_clk),
+	.address (addr),
+	.q       (rom_q)
+);
+
+king_palette King_palette (
+	.index (rom_q),
+	.red   (palette_red),
+	.green (palette_green),
+	.blue  (palette_blue)
+);
+
+endmodule
