@@ -1,0 +1,220 @@
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Company: 
+// Engineer: 
+// 
+// Create Date: 04/28/2026 05:37:15 PM
+// Design Name: 
+// Module Name: text_health
+// Project Name: 
+// Target Devices: 
+// Tool Versions: 
+// Description: 
+// 
+// Dependencies: 
+// 
+// Revision:
+// Revision 0.01 - File Created
+// Additional Comments:
+// 
+//////////////////////////////////////////////////////////////////////////////////
+
+
+module text_health(
+    input logic [9:0] DrawX, DrawY,
+	input logic [12:0] addr,
+	input logic blank,
+	input logic is_ko,
+	input logic [6:0] p1_health, p2_health,
+	input logic reset,
+	input logic pix_clk,
+	input logic rnd_clk,
+	input logic timer_start,
+	input logic [7:0] keycode0, keycode1,
+	output logic [3:0] red, green, blue,
+	output logic [5:0] timer_out
+);
+
+
+//I AM HARDCODING THE HEALTHBARS TO A CERTAIN VALUE FOR TESTING PURPOSES!!!!
+// CHANGE IT LATER!!!!!11
+
+logic [10:0] font_addr;
+logic [7:0] curr_row;
+logic [5:0] out, count;
+logic draw_timer_0, draw_timer_1, draw_char1_health, draw_char2_health, draw_char1_name, draw_char2_name;
+logic draw_bg_name0, draw_bg_name1, draw_bg_name2, draw_bg_name3, draw_bg_name4;
+int pixel; // the index of the pixelin the rom character thingty 
+logic pix;
+
+//where character 1's health bar starts (top left corner) + dimensions
+localparam CHAR1_HEALTH_X = 20 ;
+localparam CHAR1_HEALTH_Y = 20;
+localparam CHAR1_HEALTH_L = 200;
+localparam CHAR1_HEALTH_H = 20;
+
+//where character 2's health bar starts (top left corner) + dimensions
+localparam CHAR2_HEALTH_X = 420 ;
+localparam CHAR2_HEALTH_Y = 20;
+localparam CHAR2_HEALTH_L = 200;
+localparam CHAR2_HEALTH_H = 20;
+
+// where round timer spot starts (top left corner) + dimensions
+localparam TIMER_X = 295;
+localparam TIMER_Y = 10;
+localparam TIMER_L = 16;
+localparam TIMER_H = 16;
+
+//LETS SAY ALL NAMES ARE FOUR CHARACTERS!!! WILL MAKE LIFE EASIER YAYAYAY
+
+// where character 1's name starts (top left corner)
+localparam CHAR1_NAME_X = 20;
+localparam CHAR1_NAME_Y = 50;
+localparam CHAR1_NAME_L = 32;
+localparam CHAR1_NAME_H = 16;
+
+// where character 2's name ends (top right corner)
+localparam CHAR2_NAME_X = 620;
+localparam CHAR2_NAME_Y = 50;
+localparam CHAR2_NAME_L = 32;
+localparam CHAR2_NAME_H = 16;
+
+//where background name text starts + dimensions
+localparam BG_NAME_X = 570; 
+localparam BG_NAME_Y = 420;
+localparam BG_NAME_L = 80; //(16*5)
+localparam BG_NAME_H = 32;
+
+//HARDCODED PLAYER HEALTH - CHANGE TO AN INPUT OF THIS MODULE LATER!!!!!!!
+//localparam CHAR1_HEALTH =  50;
+//localparam CHAR2_HEALTH = 90;
+
+
+// round timer
+//numbers are code x30 - x39 in font_rom
+//capital alphabet : code x41 to x5a 
+always_ff @ (posedge rnd_clk)
+    begin
+        if ( reset || keycode0 == 8'h15 || keycode1 == 8'h15) 
+           begin
+                out <= 6'd30;
+                count <= 6'd60;
+           end
+//        else if (is_ko)
+//        begin
+//            out <= 6'd00;
+//            count <= 6'd60;
+//        end
+        else if (timer_start)
+            begin
+                if (count == 0 && out != 6'b0)
+                    begin
+                    out <= out-1;
+                    count <= 6'd60;
+                    end
+                else
+                    count <= count-1;
+        end
+    end
+ 
+ assign timer_out = out;
+//check which thing we're drawing
+assign draw_timer_0 = (DrawX >= TIMER_X) && (DrawX <= (TIMER_X + 24)) && (DrawY >= TIMER_Y) && (DrawY <= TIMER_Y + 48);
+assign draw_timer_1 = (DrawX > (TIMER_X + 32)) && (DrawX <= (TIMER_X + 56)) && (DrawY >= TIMER_Y) && (DrawY <= TIMER_Y + 48);
+assign draw_char1_health = (DrawX >= CHAR1_HEALTH_X) && (DrawX <= (CHAR1_HEALTH_X + CHAR1_HEALTH_L)) && (DrawY >= CHAR1_HEALTH_Y) && (DrawY <= CHAR1_HEALTH_Y + CHAR1_HEALTH_H);
+assign draw_char2_health = (DrawX >= CHAR2_HEALTH_X) && (DrawX <= (CHAR2_HEALTH_X + CHAR2_HEALTH_L)) && (DrawY >= CHAR2_HEALTH_Y) && (DrawY <= CHAR2_HEALTH_Y + CHAR2_HEALTH_H);
+assign draw_char1_name = (DrawX >= CHAR1_NAME_X) && (DrawX <= (CHAR1_NAME_X + CHAR1_NAME_L)) && (DrawY >= CHAR1_NAME_Y) && (DrawY <= CHAR1_NAME_Y + CHAR1_NAME_H);
+assign draw_char2_name = (DrawX >= CHAR2_NAME_X) && (DrawX <= (CHAR2_NAME_X + CHAR2_NAME_L)) && (DrawY >= CHAR2_NAME_Y) && (DrawY <= CHAR2_NAME_Y + CHAR2_NAME_H);
+assign draw_bg_name0 = ((DrawX >= BG_NAME_X) && (DrawX < (BG_NAME_X + 16)) && (DrawY >= BG_NAME_Y) && (DrawY <= (BG_NAME_Y + BG_NAME_H)));
+assign draw_bg_name1 = ((DrawX >= (BG_NAME_X +16)) && (DrawX < (BG_NAME_X + 32)) && (DrawY >= BG_NAME_Y) && (DrawY <= (BG_NAME_Y + BG_NAME_H)));
+assign draw_bg_name2 = ((DrawX >= (BG_NAME_X + 32) ) && (DrawX < (BG_NAME_X + 48)) && (DrawY >= BG_NAME_Y) && (DrawY <= (BG_NAME_Y + BG_NAME_H)));
+assign draw_bg_name3 = ((DrawX >= (BG_NAME_X+ 48)) && (DrawX < (BG_NAME_X + 64)) && (DrawY >= BG_NAME_Y) && (DrawY <= (BG_NAME_Y + BG_NAME_H)));
+assign draw_bg_name4 = ((DrawX >= (BG_NAME_X + 64)) && (DrawX <= (BG_NAME_X + 80)) && (DrawY >= BG_NAME_Y) && (DrawY <= (BG_NAME_Y + BG_NAME_H)));
+
+always_comb
+begin 
+    if (draw_char1_health)
+        begin
+            if (DrawX <=((CHAR1_HEALTH_X + (CHAR1_HEALTH_L * p1_health)/100))) // yes health
+                begin
+                    red = 4'h3;
+                    green = 4'hD;
+                    blue = 4'h1;
+                end
+            else // no health
+                begin
+                    red = 4'h6;
+                    green = 4'h0;
+                    blue = 4'h0;
+                end
+        end
+    else if (draw_timer_0) //tens place
+        begin
+           font_addr = ((48 + (out/10)) * 16) + ((DrawY - TIMER_Y) / 3); //CITE
+           pixel = ((DrawX - TIMER_X) / 3) % 8;; //cite
+   
+           pix = curr_row[7 - pixel];
+            if (pix)
+                begin
+                    red = 4'h0;
+                    green = 4'h3;
+                    blue = 4'h7;
+                end
+            else
+                begin
+                    red = 4'h0;
+                    green = 4'h0;
+                    blue = 4'h0;
+                end
+        end
+    else if (draw_timer_1) //ones place 
+        begin
+           font_addr = ((48 + (out%10)) * 16) + ((DrawY - TIMER_Y) / 3); //CITE
+            pixel = ((DrawX - (TIMER_X + 32)) / 3) % 8; //cite
+   
+            pix = curr_row[7 - pixel];
+            if (pix)
+                begin
+                    red = 4'h0;
+                    green = 4'h3;
+                    blue = 4'h7;
+                end
+            else
+                begin
+                    red = 4'h0;
+                    green = 4'h0;
+                    blue = 4'h0;
+                end
+        end
+    else if (draw_char2_health)
+        begin
+            if (((CHAR2_HEALTH_X + (CHAR2_HEALTH_L * p2_health)/100)) >= DrawX) // yes health
+                begin
+                    red = 4'h3;
+                    green = 4'hD;
+                    blue = 4'h1;
+                end
+            else // no health
+                begin
+                    red = 4'h6;
+                    green = 4'h0;
+                    blue = 4'h0;
+                end
+        end
+        
+    else
+        begin
+            red = 4'h0;
+            green = 4'h0;
+            blue = 4'h0;
+        end
+          
+end
+
+font_rom font_rom_i (
+    .addr(font_addr),  //check the width, font rom needs only 11 with 8 bits of data
+    .data(curr_row)
+);
+
+   
+endmodule
