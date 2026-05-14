@@ -1,0 +1,723 @@
+//-------------------------------------------------------------------------
+//    Color_Mapper.sv                                                    --
+//    Stephen Kempf                                                      --
+//    3-1-06                                                             --
+//                                                                       --
+//    Modified by David Kesler  07-16-2008                               --
+//    Translated by Joe Meng    07-07-2013                               --
+//    Modified by Zuofu Cheng   08-19-2023                               --
+//                                                                       --
+//    Fall 2023 Distribution                                             --
+//                                                                       --
+//    For use with ECE 385 USB + HDMI                                    --
+//    University of Illinois ECE Department                              --
+//-------------------------------------------------------------------------
+
+
+module  color_mapper ( input logic [9:0] DrawX, DrawY,
+                       input logic clk_25MHz,
+                       input logic Vsync, 
+                       input logic [7:0] Keycode0, Keycode1,
+                       input logic Reset,
+                       output logic [3:0]  Red, Green, Blue );
+                       
+                    
+logic [13:0] jack_addr, paul_addr;
+logic [17:0] bg_addr;
+//logic [9:0] drawx, drawy;
+logic [3:0] king_r, king_g, king_b;
+logic [3:0] paul_r, paul_g, paul_b;
+logic [3:0] bg_r, bg_g, bg_b;
+logic [3:0] round_r, round_g, round_b;
+logic [3:0] chars_r, chars_g, chars_b;
+logic [3:0] mainm_r, mainm_g, mainm_b;
+logic [3:0] ling_r, ling_g, ling_b;
+logic [3:0] nina_r, nina_g, nina_b;
+logic [3:0] font_r, font_g, font_b;
+logic [3:0] hit_r, hit_g, hit_b;
+logic [5:0] Countdown_Timer;
+//logic [3:0] jack_r_d, jack_g_d, jack_b_d;
+//logic [3:0] paul_r_d, paul_g_d, paul_b_d;
+//logic [3:0] bg_r_d, bg_g_d, bg_b_d;
+
+logic paul_bounds, jack_bounds, round_bounds;
+logic paul_t, king_t, bg_t, round_t, nina_t, ling_t, font_t;
+logic paul_bound, king_bound, ling_bound, nina_bound, font_bound, hit_bound;
+logic [9:0] Char1x, Char1y, Char2x, Char2y;
+logic [2:0] Frame1,Frame2;
+logic [6:0] p1_health, p2_health;
+logic [5:0] Round_Timer;
+logic is_ko, is_round_over, diff_state;
+logic [7:0] prev_keycode0, prev_keycode1;
+logic [9:0] outline_x;
+logic outline_bounds;
+logic Timer_Start;
+
+logic paul_char1, paul_char2, king_char1, king_char2, nina_char1, nina_char2, ling_char1, ling_char2;
+
+enum logic [2:0] {MENU, CHAR_SELECT1, IDLE1,CHAR_SELECT2, IDLE2 , START, GAMEOVER} curr_state, next_state;
+
+// CITE!!!
+//hardcodinggggg :P
+//    localparam PAULX = 10'd70;
+//    localparam PAULY = 10'd280;
+//    localparam JACKX = 10'd340;
+//    localparam JACKY = 10'd280;
+    
+   localparam SPRITE_W  = 64;
+    localparam SPRITE_H  = 48;
+    localparam SCALE     = 4;
+    localparam FRAME_PIX = SPRITE_W * SPRITE_H;  // 8192
+    localparam BG_W      = 256;
+    localparam BG_H      = 128;
+    localparam FRAME_W   = 640;
+    localparam FRAME_H   = 480;
+//    localparam PAUL_FRAME = 3'h0;
+//    localparam JACK_FRAME = 3'h0;
+    localparam SHEET_W = 320;
+  
+    localparam OUTLINE_Y = 365;
+    localparam OUTLINE_W = 148;
+    localparam OUTLINE_H = 4;
+     
+
+ //CITE!!!!
+
+assign round_bounds = (DrawX >= 20) && (DrawX <=620) && (DrawY >=10) && (DrawY <= 66);
+
+// address calcs CITEEE!!!
+
+//assign paul_addr = paul_bounds ? (PAUL_FRAME * SPRITE_W) + ((paul_ly >> 2) * SHEET_W) + ((paul_lx >> 2)% SPRITE_W) : 14'b0;
+
+//assign jack_addr = jack_bounds ? (JACK_FRAME * SPRITE_W) + ((jack_ly >> 2) * SHEET_W) + (SPRITE_W - 1 - ((jack_lx >> 2)% SPRITE_W)) : 14'b0;
+//assign paul_addr = jack_addr;
+//cite!!
+
+assign bg_addr = ((DrawX * 160) / 640) + (((DrawY * 120) / 480) * 160);
+
+//always_comb
+//begin
+//    if(Keycode0 == 8'd19 || Keycode1 == 8'd19 ) //paul
+//    begin
+//        outline_x = 9'd5;
+//        outline_bounds = ((DrawX >= outline_x) && (DrawX <= outline_x + OUTLINE_W) && (DrawY >= OUTLINE_Y) && (DrawY <= OUTLINE_Y + OUTLINE_H));
+//    end
+//    else if (Keycode0 == 8'd14 || Keycode1 == 8'd14) //king
+//    begin
+//        outline_x = 9'd271;
+//        outline_bounds = ((DrawX >= outline_x) && (DrawX <= outline_x + OUTLINE_W) && (DrawY >= OUTLINE_Y) && (DrawY <= OUTLINE_Y + OUTLINE_H));
+//    end
+//    else if (Keycode0 == 8'd15 || Keycode1 == 8'd15) //ling
+//    begin
+//        outline_x = 9'd404;
+//        outline_bounds = ((DrawX >= outline_x) && (DrawX <= outline_x + OUTLINE_W) && (DrawY >= OUTLINE_Y) && (DrawY <= OUTLINE_Y + OUTLINE_H));
+//    end
+//    else if (Keycode0 == 8'd17 || Keycode1 == 8'd17) //nina
+//    begin
+//        outline_x = 9'd138;
+//        outline_bounds = ((DrawX >= outline_x) && (DrawX <= outline_x + OUTLINE_W) && (DrawY >= OUTLINE_Y) && (DrawY <= OUTLINE_Y + OUTLINE_H));
+//    end
+//    else
+//        outline_bounds = 1'b0;
+          
+//end
+
+always_ff@ (posedge clk_25MHz)
+begin
+    if (Reset)
+        begin
+        paul_char1 <= 1'b0;
+        paul_char2 <= 1'b0;
+        king_char1 <= 1'b0;
+        king_char2 <= 1'b0;
+        nina_char1 <= 1'b0;
+        nina_char2 <= 1'b0;
+        ling_char1 <= 1'b0;
+        ling_char2 <= 1'b0;
+        end
+        
+     else 
+     begin   
+    if(( Keycode0 == 8'd19 || Keycode1 == 8'd19) && curr_state == CHAR_SELECT1 ) //paul
+    begin
+        paul_char1 <= 1'b1;
+        king_char1 <= 1'b0;
+        nina_char1 <= 1'b0;
+        ling_char1 <= 1'b0;
+      
+    end
+    else if(( Keycode0 == 8'd19 || Keycode1 == 8'd19) && curr_state == CHAR_SELECT2 ) //paul
+    begin
+        paul_char2 <= 1'b1;
+        king_char2 <= 1'b0;
+        nina_char2 <= 1'b0;
+        ling_char2 <= 1'b0;
+    end
+    else if ((Keycode0 == 8'd14 || Keycode1 == 8'd14) && curr_state == CHAR_SELECT1) //king
+    begin
+        king_char1 <= 1'b1;
+        paul_char1 <= 1'b0;
+        nina_char1 <= 1'b0;
+        ling_char1 <= 1'b0;
+    end
+    else if ((Keycode0 == 8'd14 || Keycode1 == 8'd14) && curr_state == CHAR_SELECT2) //king
+    begin
+        king_char2 <= 1'b1;
+        paul_char2 <= 1'b0;
+        nina_char2 <= 1'b0;
+        ling_char2 <= 1'b0;
+    end
+    else if ((Keycode0 == 8'd15 || Keycode1 == 8'd15) && curr_state == CHAR_SELECT1) //ling
+    begin
+        ling_char1 <= 1'b1;
+        paul_char1 <= 1'b0;
+        king_char1 <= 1'b0;
+        nina_char1 <= 1'b0;
+    end
+    else if ((Keycode0 == 8'd15 || Keycode1 == 8'd15) && curr_state == CHAR_SELECT2) //ling
+    begin
+        ling_char2 <= 1'b1;
+        paul_char2 <= 1'b0;
+        king_char2 <= 1'b0;
+        nina_char2 <= 1'b0;
+    end
+    else if ((Keycode0 == 8'd17 || Keycode1 == 8'd17) && curr_state == CHAR_SELECT1) //nina
+    begin
+        nina_char1 <= 1'b1;
+        paul_char1 <= 1'b0;
+        king_char1 <= 1'b0;
+        ling_char1 <= 1'b0;
+    end
+    else if ((Keycode0 == 8'd17 || Keycode1 == 8'd17) && curr_state == CHAR_SELECT2) //nina
+    begin
+        nina_char2 <= 1'b1;
+        paul_char2 <= 1'b0;
+        king_char2 <= 1'b0;
+        ling_char2 <= 1'b0;
+    end
+    end
+end        
+  
+ always_comb
+  begin        
+    outline_x = 9'b0;
+    outline_bounds = 1'b0;
+    if(paul_char1 && curr_state == IDLE1) //paul
+    begin
+        outline_x = 9'd12;
+        outline_bounds = ((DrawX >= outline_x) && (DrawX <= outline_x + OUTLINE_W) && (DrawY >= OUTLINE_Y) && (DrawY <= OUTLINE_Y + OUTLINE_H));
+    end
+    else if(paul_char2 && curr_state == IDLE2) //paul
+    begin
+        outline_x = 10'd12;
+        outline_bounds = ((DrawX >= outline_x) && (DrawX <= outline_x + OUTLINE_W) && (DrawY >= OUTLINE_Y) && (DrawY <= OUTLINE_Y + OUTLINE_H));
+    end
+    else if (king_char1 && curr_state == IDLE1) //king
+    begin
+        outline_x = 10'd322;
+        outline_bounds = ((DrawX >= outline_x) && (DrawX <= outline_x + OUTLINE_W) && (DrawY >= OUTLINE_Y) && (DrawY <= OUTLINE_Y + OUTLINE_H));
+    end
+     else if (king_char2 && curr_state == IDLE2) //king
+    begin
+        outline_x = 9'd322;
+        outline_bounds = ((DrawX >= outline_x) && (DrawX <= outline_x + OUTLINE_W) && (DrawY >= OUTLINE_Y) && (DrawY <= OUTLINE_Y + OUTLINE_H));
+    end
+    else if (ling_char1 && curr_state == IDLE1) //ling
+    begin   
+        outline_x = 10'd475;
+        outline_bounds = ((DrawX >= outline_x) && (DrawX <= outline_x + OUTLINE_W) && (DrawY >= OUTLINE_Y) && (DrawY <= OUTLINE_Y + OUTLINE_H));
+    end
+    else if (ling_char2 && curr_state == IDLE2) //ling
+    begin   
+        outline_x = 10'd475;
+        outline_bounds = ((DrawX >= outline_x) && (DrawX <= outline_x + OUTLINE_W) && (DrawY >= OUTLINE_Y) && (DrawY <= OUTLINE_Y + OUTLINE_H));
+    end
+    else if (nina_char1 && curr_state == IDLE1) //nina
+    begin
+        outline_x = 10'd166;
+        outline_bounds = ((DrawX >= outline_x) && (DrawX <= outline_x + OUTLINE_W) && (DrawY >= OUTLINE_Y) && (DrawY <= OUTLINE_Y + OUTLINE_H));
+    end
+    else if (nina_char2 && curr_state == IDLE2) //nina
+    begin
+        outline_x = 10'd166;
+        outline_bounds = ((DrawX >= outline_x) && (DrawX <= outline_x + OUTLINE_W) && (DrawY >= OUTLINE_Y) && (DrawY <= OUTLINE_Y + OUTLINE_H));
+    end
+    else
+        outline_bounds = 1'b0;
+end
+
+
+game_logic Game (
+    .clk(Vsync),
+    .reset(Reset),
+    .round_timer(Round_Timer),
+    .keycode0(Keycode0), 
+    .keycode1(Keycode1),
+    .char1_x(Char1x),
+    .char1_y(Char1y),
+    .char2_x(Char2x),
+    .char2_y(Char2y),
+    .countdown_timer(Countdown_Timer),
+    .timer_start(Timer_Start),
+    .frame0(Frame1),
+    .frame1(Frame2),
+    .p1_health(p1_health),
+    .p2_health(p2_health),
+    .is_ko(is_ko),
+    .is_round_over(is_round_over)
+
+);
+text_health Round (
+    .pix_clk(clk_25MHz),
+    .rnd_clk(Vsync),
+    .reset(Reset),
+    .addr(bg_addr),
+    .p1_health(p1_health),
+    .p2_health(p2_health),
+    .timer_start(Timer_Start),
+    .DrawX(DrawX),
+    .DrawY(DrawY),
+    .blank(1'b1),
+    .is_ko(is_ko),
+    .keycode0(Keycode0), 
+    .keycode1(Keycode1),
+    .red(round_r),
+    .green(round_g),
+    .blue(round_b),
+    .timer_out(Round_Timer)
+
+);
+king_m King (
+    .pix_clk(clk_25MHz),
+    .frame1(Frame1),
+    .frame2(Frame2), // hardcoded for now, change later
+    .char1d(king_char1),
+    .char2d(king_char2),
+    .DrawX(DrawX), 
+    .DrawY(DrawY),
+    .char1_x(Char1x),
+    .char1_y(Char1y),
+    .char2_x(Char2x),
+    .char2_y(Char2y),
+    .blank(1'b1),
+    .red(king_r),
+    .green(king_g),
+    .blue(king_b),
+    .bounds(king_bound)
+
+);
+
+paul_m Paul (
+    .pix_clk(clk_25MHz),
+    .frame1(Frame1), // hardcoded for now change later
+    .frame2(Frame2),
+    .char1d(paul_char1),
+    .char2d(paul_char2),
+    .DrawX(DrawX), 
+    .DrawY(DrawY),
+    .char1_x(Char1x),
+    .char1_y(Char1y),
+    .char2_x(Char2x),
+    .char2_y(Char2y),
+    .blank(1'b1),
+    .red(paul_r),
+    .green(paul_g),
+    .blue(paul_b),
+    .bounds(paul_bound)
+
+);
+
+ling_m Ling (
+    .pix_clk(clk_25MHz),
+    .frame1(Frame1), // hardcoded for now change later
+    .frame2(Frame2),
+    .char1d(ling_char1),
+    .char2d(ling_char2),
+    .DrawX(DrawX), 
+    .DrawY(DrawY),
+    .char1_x(Char1x),
+    .char1_y(Char1y),
+    .char2_x(Char2x),
+    .char2_y(Char2y),
+    .blank(1'b1),
+    .red(ling_r),
+    .green(ling_g),
+    .blue(ling_b),
+    .bounds(ling_bound)
+
+);
+
+nina_m Nina (
+    .pix_clk(clk_25MHz),
+    .frame2(Frame2), // hardcoded for now, change later
+    .frame1(Frame1),
+    .char1d(nina_char1),
+    .char2d(nina_char2),
+    .DrawX(DrawX), 
+    .DrawY(DrawY),
+    .char1_x(Char1x),
+    .char1_y(Char1y),
+    .char2_x(Char2x),
+    .char2_y(Char2y),
+    .blank(1'b1),
+    .red(nina_r),
+    .green(nina_g),
+    .blue(nina_b),
+    .bounds(nina_bound)
+
+);
+
+background_m Kyoto (
+    .pix_clk(clk_25MHz),
+    .addr(bg_addr),
+    .DrawX(DrawX),
+    .DrawY(DrawY),
+    .blank(1'b1),
+    .red(bg_r),
+    .green(bg_g),
+    .blue(bg_b)
+
+);
+
+font_m Font (
+    .pix_clk(clk_25MHz),
+    .vsync(Vsync),
+    .DrawX(DrawX),
+    .DrawY(DrawY),
+    .reset(Reset),
+    .blank(1'b1),
+    .keycode0(Keycode0), 
+    .keycode1(Keycode1),
+    .paul_char1(paul_char1),
+    .paul_char2(paul_char2),
+    .king_char1(king_char1),
+    .king_char2(king_char2),
+    .nina_char1(nina_char1),
+    .nina_char2(nina_char2),
+    .ling_char1(ling_char1),
+    .ling_char2(ling_char2),
+    .sys_state(curr_state),
+    .p1_health(p1_health),
+    .p2_health(p2_health),
+    .red(font_r),
+    .green(font_g),
+    .blue(font_b),
+    .font_bound(font_bound),
+    .timer_start(Timer_Start),
+    .countdown_timer(Countdown_Timer)
+
+);
+
+hit_m Hit (
+    .pix_clk(clk_25MHz),
+    .DrawX(DrawX),
+    .DrawY(DrawY),
+    .blank(1'b1),
+    .red(hit_r),
+    .green(hit_g),
+    .blue(hit_b),
+    .hit_bound(hit_bound)
+
+);
+character_select Char_Select (
+    .vga_clk(clk_25MHz),
+    .DrawX(DrawX),
+    .DrawY(DrawY),
+    .blank(1'b1),
+    .red(chars_r),
+    .green(chars_g),
+    .blue(chars_b)
+
+);
+
+main_menu Main_Menu (
+    .vga_clk(clk_25MHz),
+    .DrawX(DrawX),
+    .DrawY(DrawY),
+    .blank(1'b1),
+    .red(mainm_r),
+    .green(mainm_g),
+    .blue(mainm_b)
+
+);
+// checking for transparency 
+//assign paul_t = (paul_r_d == 4'hF) && (paul_g_d == 4'h0) && ((paul_b_d == 4'hC) ||  (paul_b_d == 4'hB));
+//assign jack_t = (jack_r_d == 4'hF) && (jack_g_d == 4'h0) && ((jack_b_d == 4'hC) ||  (jack_b_d == 4'hB));
+//assign bg_t = (bg_r_d == 4'hF) && (bg_g_d == 4'h0) && (bg_b_d == 4'hF);
+assign paul_t = (paul_r == 4'hF) && (paul_g == 4'h0) && (paul_b == 4'hF);
+assign king_t = (king_r == 4'hF) && (king_g == 4'h0) && (king_b == 4'hF);
+assign ling_t = (ling_r == 4'hF) && (ling_g == 4'h0) && (ling_b == 4'hF);
+assign nina_t = (nina_r == 4'hF) && (nina_g == 4'h0) && (nina_b == 4'hF);
+assign bg_t = (bg_r == 4'hC) && (bg_g == 4'hF) && (bg_b == 4'h1);
+assign round_t = (round_r == 4'h0) && (round_g == 4'h0) && (round_b == 4'h0);
+assign font_t = (font_r == 4'hF) && (font_g == 4'h0) && (font_b == 4'hF);
+
+//------------------------game fsm----------------------------------
+
+
+always_ff @(posedge clk_25MHz) //CITE THIS ALWAYS FF BLOCK
+begin
+    prev_keycode0 <= Keycode0;
+    prev_keycode1 <= Keycode1;
+end 
+
+always_ff @(posedge clk_25MHz)// or vsync as clock...?
+begin
+    if (Reset)
+    begin
+        curr_state <= MENU;
+        diff_state <= 1'b0;
+        
+    end
+    else
+    begin
+        curr_state <= next_state;
+        diff_state <= (curr_state != next_state); // cite idea from caude
+     end
+end
+
+always_comb
+begin
+    next_state = curr_state;
+    
+    unique case(curr_state)
+        MENU:
+            if( Keycode0 == 8'd40|| Keycode1 == 8'd40)
+                next_state = CHAR_SELECT1;
+        CHAR_SELECT1:
+            begin
+            if (prev_keycode0 == 8'h0)
+            begin
+                if(Keycode0 == 8'd19 || Keycode0 == 8'd14 || Keycode0 == 8'd15 || Keycode0 == 8'd17)
+                    next_state = IDLE1;
+            end
+            else if (prev_keycode1 == 8'h0)
+                begin
+                if ( Keycode1 == 8'd19 ||Keycode1 == 8'd14 || Keycode1 == 8'd15 || Keycode1 == 8'd17)
+                    next_state = IDLE1;
+                end
+           end
+        IDLE1:
+            if( Keycode0 == 8'd40|| Keycode1 == 8'd40)
+                next_state = CHAR_SELECT2;
+        CHAR_SELECT2:
+            begin
+            if (prev_keycode0 == 8'h0)
+            begin
+                if(Keycode0 == 8'd19 || Keycode0 == 8'd14 || Keycode0 == 8'd15 || Keycode0 == 8'd17)
+                    next_state = IDLE2;
+            end
+            else if (prev_keycode1 == 8'h0)
+                begin
+                if ( Keycode1 == 8'd19 ||Keycode1 == 8'd14 || Keycode1 == 8'd15 || Keycode1 == 8'd17)
+                    next_state = IDLE2;
+                end
+            end
+        IDLE2:
+            if( Keycode0 == 8'h15|| Keycode1 == 8'h15)
+                next_state = START;
+        START:
+            if(is_ko || is_round_over)
+                next_state = GAMEOVER;
+        GAMEOVER:
+            begin
+            if(Keycode0 == 8'h15 || Keycode1 == 8'h15)
+                next_state = START;
+            else if (Keycode0 == 8'd16 || Keycode1 == 8'd16)
+                next_state = MENU;
+            end
+         default:
+            next_state = MENU;
+            
+      endcase
+end
+
+always_comb
+begin
+    case(curr_state)
+        MENU:
+            begin
+            Red = mainm_r;
+            Green = mainm_g;
+            Blue = mainm_b;
+            end
+        CHAR_SELECT1:
+            begin
+            Red = chars_r;
+            Green = chars_g;
+            Blue = chars_b;
+            end
+        IDLE1:
+            begin
+            if(outline_bounds)
+                 begin
+                 Red = 4'h6;
+                 Green = 4'h0;
+                 Blue = 4'h0;
+                 end
+            else
+                begin
+                Red = chars_r;
+                Green = chars_g;
+                Blue = chars_b;
+                end
+    
+            end
+        CHAR_SELECT2:
+            begin
+            Red = chars_r;
+            Green = chars_g;
+            Blue = chars_b;
+            end
+        IDLE2:
+            begin
+            if(outline_bounds)
+                 begin
+                 Red = 4'h6;
+                 Green = 4'h0;
+                 Blue = 4'h0;
+                 end
+            else
+                begin
+                Red = chars_r;
+                Green = chars_g;
+                Blue = chars_b;
+                end
+    
+            end
+        START:
+        begin
+        if (font_bound && !font_t)
+            begin
+            Red = font_r;
+            Green = font_g;
+            Blue = font_b;
+            end
+        else if (round_bounds && !round_t)
+            begin
+            Red = round_r;
+            Green = round_g;
+            Blue = round_b;
+            end
+        else if (king_bound && !king_t)
+            begin
+            Red = king_r;
+            Green = king_g;
+            Blue = king_b;
+            end
+        else if (paul_bound && !paul_t)
+            begin
+            Red = paul_r;
+            Green = paul_g;
+            Blue = paul_b;
+            end
+        else if (nina_bound && !nina_t)
+            begin
+            Red = nina_r;
+            Green = nina_g;
+            Blue = nina_b;
+            end
+       else if (ling_bound && !ling_t)
+            begin
+            Red = ling_r;
+            Green = ling_g;
+            Blue = ling_b;
+            end
+      
+       else if (!bg_t)
+            begin 
+            Red = bg_r;
+            Green = bg_g;
+            Blue = bg_b;
+            end
+         else
+            begin
+            Red = 4'hC;
+            Green = 4'hE;
+            Blue = 4'hF;
+            end
+        end
+        GAMEOVER:
+        begin
+           if (!font_t)
+            begin
+            Red = font_r;
+            Green = font_g;
+            Blue = font_b;
+            end
+        else if (round_bounds && !round_t)
+            begin
+            Red = round_r;
+            Green = round_g;
+            Blue = round_b;
+            end
+       else if (!bg_t)
+            begin 
+            Red = bg_r;
+            Green = bg_g;
+            Blue = bg_b;
+            end
+        else
+            begin
+            Red = 4'hC;
+            Green = 4'hE;
+            Blue = 4'hF;
+            end
+        end 
+            
+         default:
+            begin
+            Red = mainm_r;
+            Green = mainm_g;
+            Blue = mainm_b;
+            end
+            
+      endcase
+
+end
+
+
+
+//z order
+//always_comb
+//begin
+//    if(is_ko || is_round_over)
+//    begin
+//        Red = 4'h0;
+//        Green = 4'h0;
+//        Red = 4'h0; 
+//    end
+//    else if (round_bounds && !round_t)
+//    begin
+//        Red = round_r;
+//        Green = round_g;
+//        Blue = round_b;
+//    end
+//    else if (king_bound && !king_t)
+//    begin
+//        Red = king_r;
+//        Green = king_g;
+//        Blue = king_b;
+//    end
+//    else if (paul_bound && !paul_t)
+//    begin
+//        Red = paul_r;
+//        Green = paul_g;
+//        Blue = paul_b;
+//    end
+//    else if (!bg_t)
+//    begin 
+//        Red = bg_r;
+//        Green = bg_g;
+//        Blue = bg_b;
+//    end
+//   else
+//    begin
+//        Red = 4'hC;
+//        Green = 4'hE;
+//        Blue = 4'hF;
+//    end
+//end
+
+ 
+endmodule
